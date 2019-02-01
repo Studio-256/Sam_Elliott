@@ -1,15 +1,26 @@
 import math
 import tkinter
 import random
+import time
 
-life = 5
-yeti_life = 3
-hit_life = 2
+life = 4
+yeti_life = 4
+hit_life = 6
 moving = [(-60, 0), (0, -60), (60, 0), (0, 60)]
+busy = False
 
 
 def do_nothing(x):
     return
+
+
+def ouch():
+    global life
+    life -= 1
+    if life:
+        label.config(text="Здоровье: " + str(life * 25))
+    if not life and canvas.coords(bullet) == canvas.coords(player):
+        label.config(text="Вы застрелили себя!")
 
 
 def ai():
@@ -24,11 +35,9 @@ def ai():
             while i < 3 and (way[i][1] == 0 or [
                 (canvas.coords(yeti)[0] + moving[way[i][0]][0] + 60 * N_X) % (60 * N_X),
                 (canvas.coords(yeti)[1] + moving[way[i][0]][1] + 60 * N_Y) % (
-                        60 * N_Y)] == canvas.coords(hit)):
+                        60 * N_Y)] in [canvas.coords(yeti)] + [canvas.coords(exit)[:2]]):
                 i += 1
-            canvas.coords(yeti,
-                          [(canvas.coords(yeti)[0] + moving[way[i][0]][0] + 60 * N_X) % (60 * N_X),
-                           (canvas.coords(yeti)[1] + moving[way[i][0]][1] + 60 * N_Y) % (60 * N_Y)])
+            move_wrap(canvas, yeti, moving[way[i][0]])
     if hit_life:
         if canvas.coords(hit) != canvas.coords(player):
             way = [(0, (canvas.coords(hit)[0] - canvas.coords(player)[0] + 60 * N_X) % (60 * N_X)),
@@ -40,15 +49,13 @@ def ai():
             while i < 3 and (way[i][1] == 0 or
                              ((canvas.coords(hit)[0] + moving[way[i][0]][0]
                                + 60 * N_X) % (60 * N_X),
-                              (canvas.coords(hit)[1] + moving[way[i][0]][1] + 60 * N_Y) % (
-                                      60 * N_Y)) in fires_pos + [tuple(canvas.coords(hit))]):
+                              (canvas.coords(hit)[1] + moving[way[i][0]][1] + 60 * N_Y) % (60 * N_Y)) in fires_pos + [tuple(canvas.coords(yeti))] + [tuple(canvas.coords(exit)[:2])]):
                 i += 1
-            canvas.coords(hit,
-                          [(canvas.coords(hit)[0] + moving[way[i][0]][0] + 60 * N_X) % (60 * N_X),
-                           (canvas.coords(hit)[1] + moving[way[i][0]][1] + 60 * N_Y) % (60 * N_Y)])
+            move_wrap(canvas, hit, moving[way[i][0]])
 
 
 def move_wrap(canvas, obj, move):
+    c = list(canvas.coords(obj))
     canvas.move(obj, move[0], move[1])
     if canvas.coords(obj)[0] < 0:
         canvas.coords(obj, [60 * N_X - 60, canvas.coords(obj)[1]])
@@ -58,56 +65,113 @@ def move_wrap(canvas, obj, move):
         canvas.coords(obj, [canvas.coords(obj)[0], 60 * N_Y - 60])
     elif canvas.coords(obj)[1] >= 60 * N_Y:
         canvas.coords(obj, [canvas.coords(obj)[0], 0])
+    if canvas.coords(obj) == canvas.coords(exit)[:2] and yeti_life and hit_life and obj == player:
+        canvas.coords(player, c)
+        return False
+    return True
 
 
 def check_move():
     global life
     if canvas.coords(player) == canvas.coords(exit)[:2]:
-        label.config(text="Победа!")
+        if hit_life:
+            label.config(text="Вы не убили Гитлера")
+        elif yeti_life:
+            label.config(text="Вы не убили снежного человека")
+        else:
+            label.config(text="Победа!")
         master.bind("<KeyPress>", do_nothing)
-    if tuple(canvas.coords(player)) in fires_pos:
+    if canvas.coords(player) == canvas.coords(yeti):
+        life = 0
+        label.config(text="Снежный человек оказался проворнее вас!")
+    elif canvas.coords(player) == canvas.coords(hit):
+        life = 0
+        label.config(text="Гитлер оказался проворнее вас!")
+    elif tuple(canvas.coords(player)) in fires_pos:
         if yeti_life:
-            life -= 1
-            label.config(text="Здоровье: " + str(life * 20))
+            ouch()
+            if life == 0:
+                label.config(text="Вы слишком часто были в Канаде!")
         else:
             life = 0
-    if canvas.coords(player) == canvas.coords(yeti) or canvas.coords(player) == canvas.coords(hit):
-        life = 0
+            label.config(text="Вы арестованы за убийство снежного человека!")
     if life == 0:
-        label.config(text="Ты проиграл!")
         master.bind("<KeyPress>", do_nothing)
-    # for f in fires:
-    #     if canvas.coords(player) == canvas.coords(f):
-    #         label.config(text="Ты проиграл!")
-    #         master.bind("<KeyPress>", do_nothing)
 
 
 def key_pressed(event):
-    if event.keysym in ['Up', 'Down', 'Left', 'Right'] or event.char.lower() in 'wasd':
+    global busy
+    if busy:
+        return
+    busy = True
+    global hit_life, yeti_life, exit
+    if event.keysym in ['Up', 'Down', 'Left', 'Right'] or event.keycode in [87, 65, 83, 68]:
+        fl = True
         if event.keysym == 'Up':
-            move_wrap(canvas, player, (0, -step))
+            fl = move_wrap(canvas, player, (0, -step))
         elif event.keysym == 'Down':
-            move_wrap(canvas, player, (0, step))
+            fl = move_wrap(canvas, player, (0, step))
         elif event.keysym == 'Left':
-            move_wrap(canvas, player, (-step, 0))
+            fl = move_wrap(canvas, player, (-step, 0))
         elif event.keysym == 'Right':
-            move_wrap(canvas, player, (step, 0))
-        # elif event.char.lower() == 'w': canvas.coords(bullet, canvas.coords(player)) move_wrap(
-        # canvas, bullet, (0, 1)) while canvas.coords(bullet) not in (canvas.coords(player),
-        # canvas.coords(yeti), canvas.coords(hit)): time.sleep(0.005) move_wrap(canvas, bullet,
-        # (0, 1)) elif event.char.lower() == 'a':
-        #
-        # elif event.char.lower() == 's':
-        #
-        # elif event.char.lower() == 'd':
-
-        ai()
-        check_move()
+            fl = move_wrap(canvas, player, (step, 0))
+        else:
+            if event.keycode == 68:
+                canvas.coords(bullet, canvas.coords(player))
+                move_wrap(canvas, bullet, (40, 0))
+                while canvas.coords(bullet) not in (canvas.coords(player), canvas.coords(yeti), canvas.coords(hit)):
+                    canvas.update()
+                    time.sleep(0.001)
+                    move_wrap(canvas, bullet, (2, 0))
+            elif event.keycode == 65:
+                canvas.coords(bullet, canvas.coords(player))
+                move_wrap(canvas, bullet, (-2, 0))
+                while canvas.coords(bullet) not in (canvas.coords(player), canvas.coords(yeti), canvas.coords(hit)):
+                    canvas.update()
+                    time.sleep(0.001)
+                    move_wrap(canvas, bullet, (-2, 0))
+            elif event.keycode == 87:
+                canvas.coords(bullet, canvas.coords(player))
+                move_wrap(canvas, bullet, (0, -2))
+                while canvas.coords(bullet) not in (canvas.coords(player), canvas.coords(yeti), canvas.coords(hit)):
+                    canvas.update()
+                    time.sleep(0.001)
+                    move_wrap(canvas, bullet, (0, -2))
+            elif event.keycode == 83:
+                canvas.coords(bullet, canvas.coords(player))
+                move_wrap(canvas, bullet, (0, 2))
+                while canvas.coords(bullet) not in (canvas.coords(player), canvas.coords(yeti), canvas.coords(hit)):
+                    canvas.update()
+                    time.sleep(0.001)
+                    move_wrap(canvas, bullet, (0, 2))
+            if canvas.coords(bullet) == canvas.coords(player):
+                ouch()
+            if canvas.coords(bullet) == canvas.coords(yeti):
+                yeti_life -= 1
+                if not yeti_life:
+                    if hit_life:
+                        exit = canvas.create_oval(canvas.coords(exit), fill='yellow')
+                    else:
+                        exit = canvas.create_oval(canvas.coords(exit), fill='green')
+                    canvas.coords(yeti, (-60, -60))
+            if canvas.coords(bullet) == canvas.coords(hit):
+                hit_life -= 1
+                if not hit_life:
+                    if yeti_life:
+                        exit = canvas.create_oval(canvas.coords(exit), fill='yellow')
+                    else:
+                        exit = canvas.create_oval(canvas.coords(exit), fill='green')
+                    canvas.coords(hit, (-60, -60))
+            canvas.coords(bullet, (-60, -60))
+        if fl:
+            ai()
+            check_move()
+    busy = False
 
 
 def prepare_and_start():
     global player, exit, fires, yeti, hit, fires_pos, bullet, life, hit_life, yeti_life
-    life, yeti_life, hit_life = 5, 3, 2
+    life, yeti_life, hit_life = 4, 5, 3
     canvas.delete("all")
     player_pos = (random.randint(0, N_X - 1) * step,
                   random.randint(0, N_Y - 1) * step)
@@ -128,13 +192,13 @@ def prepare_and_start():
         fire = canvas.create_image(fire_pos, image=canada_pic, anchor='nw')
         fires.append(fire)
         fires_pos.append(fire_pos)
-    player = canvas.create_image(player_pos, image=zigmund_pic, anchor='nw')
     exit = canvas.create_oval(
         (exit_pos[0], exit_pos[1]),
         (exit_pos[0] + step, exit_pos[1] + step),
-        fill='yellow'
+        fill='red'
     )
-    bullet = canvas.create_image((-60, -60), image=tkinter.PhotoImage(file='bullet.gif'))
+    player = canvas.create_image(player_pos, image=zigmund_pic, anchor='nw')
+    bullet = canvas.create_image((-60, -60), image=bullet_pic)
     hit_pos = (random.randint(0, N_X - 1) * step,
                random.randint(0, N_Y - 1) * step)
     while hit_pos in fires_pos + [player_pos] + [exit_pos]:
@@ -163,6 +227,7 @@ hit_pic = tkinter.PhotoImage(file='hit.gif')
 yeti_pic = tkinter.PhotoImage(file='yeti.gif')
 zigmund_pic = tkinter.PhotoImage(file='Zigmund.gif')
 canada_pic = tkinter.PhotoImage(file='Canada.gif')
+bullet_pic = tkinter.PhotoImage(file='bullet.gif')
 step = 60  # Размер клетки
 N_X = master.winfo_screenwidth() // 60
 N_Y = (master.winfo_screenheight() - 25) // 60
